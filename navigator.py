@@ -77,6 +77,9 @@ class RealTimeNavigator:
         alts = [r.get('alt', 50.0) for r in self.db.records]
         self._mean_db_alt = float(np.mean(alts)) if alts else 50.0
 
+        self._last_lat = None
+        self._last_lon = None
+
     # ------------------------------------------------------------------
     # Single-frame localisation
     # ------------------------------------------------------------------
@@ -121,7 +124,16 @@ class RealTimeNavigator:
         global_desc = extract_global_descriptor(frame, self.extractor)
 
         # 3. FAISS top-K retrieval
-        candidates = self.db.search(global_desc, k=_TOP_K_RETRIEVE)
+        if hasattr(self, '_last_lat') and self._last_lat is not None:
+            candidates = self.db.search_near(
+                global_desc,
+                center_lat=self._last_lat,
+                center_lon=self._last_lon,
+                radius_m=500.0,
+                k=_TOP_K_RETRIEVE
+            )
+        else:
+            candidates = self.db.search(global_desc, k=_TOP_K_RETRIEVE)
         if not candidates:
             return None
 
@@ -239,6 +251,8 @@ class RealTimeNavigator:
         confidence = min(1.0, best_inliers / 50.0)
         elapsed_ms = (time.perf_counter() - t0) * 1000.0
 
+        self._last_lat = est_lat
+        self._last_lon = est_lon
         return {
             'est_lat':              est_lat,
             'est_lon':              est_lon,
@@ -295,6 +309,9 @@ class RealTimeNavigator:
             if not ret:
                 break
             frame_idx += 1
+            if frame_idx % 30 != 0:
+                pbar.update(1)
+                continue
             pbar.update(1)
 
             # Nearest GT record for this frame
@@ -366,23 +383,23 @@ class RealTimeNavigator:
             if col not in df.columns:
                 df[col] = float('nan')
 
-        # Estimated positions → individual Point Placemarks (not a LineString)
-        kml_est  = simplekml.Kml()
-        est_rows = df.dropna(subset=['est_lat', 'est_lon'])
+        kml_est = simplekml.Kml()
+        est_rows = df.dropna(subset=['est_lat', 'est_lon']).sort_values('frame_idx')
+        if len(est_rows) >= 2:
+            ls = kml_est.newlinestring(name='Estimated path')
+            ls.coords = [(row['est_lon'], row['est_lat'])
+                         for _, row in est_rows.iterrows()]
+            ls.style.linestyle.color = simplekml.Color.red
+            ls.style.linestyle.width = 3
         for _, row in est_rows.iterrows():
-            frame_idx = int(row['frame_idx'])
-            err_m     = row.get('error_m',    float('nan'))
-            inliers   = row.get('num_inliers', 0)
-            pnt       = kml_est.newpoint(name=f'Frame {frame_idx}')
+            pnt = kml_est.newpoint(name=f'Frame {int(row["frame_idx"])}')
             pnt.coords = [(row['est_lon'], row['est_lat'])]
-            err_str   = f'{err_m:.1f} m' if err_m == err_m else 'N/A'
-            pnt.description = (f'Frame: {frame_idx}\n'
-                               f'Lat: {row["est_lat"]:.6f}\n'
-                               f'Lon: {row["est_lon"]:.6f}\n'
-                               f'Error: {err_str}\n'
-                               f'Inliers: {int(inliers) if inliers == inliers else 0}')
-            pnt.style.iconstyle.color  = simplekml.Color.red
-            pnt.style.iconstyle.scale  = 0.8
+            err_str = f'{row["error_m"]:.1f} m' if pd.notna(row.get("error_m")) else 'N/A'
+            pnt.description = (f'Frame: {int(row["frame_idx"])}\n'
+                              f'Error: {err_str}\n'
+                              f'Inliers: {int(row["num_inliers"]) if pd.notna(row.get("num_inliers")) else 0}')
+            pnt.style.iconstyle.scale = 0.5
+            pnt.style.iconstyle.color = simplekml.Color.red
         kml_est.save(os.path.join(out_dir, 'path_estimated.kml'))
 
         if with_gt:
