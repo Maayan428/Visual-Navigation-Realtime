@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+venv/
+
+# Outputs
+db/
+out/
+
+# macOS
+.DS_Store
+
+# Videos
+*.mp4
+*.MP4
+*.mov
+*.MOV
+
+# Large GIS data
+*.tif
+*.tiff
+*.zip
+db_gis/
