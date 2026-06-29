@@ -67,6 +67,47 @@ pip install -r requirements.txt
 
 ---
 
+## Data
+
+The reference and query flight videos are not included in this repository due to file size.
+To run the system, obtain the following files from your instructor and place them in the `data/` folder:
+
+**Reference flight** (used to build the database):
+```
+DJI_20260427152226_0017_D.MP4
+```
+
+**Query flight** (used to test localization):
+```
+DJI_20260427152735_0019_D.MP4
+```
+
+The SRT telemetry files are already included in `data/`.
+
+After placing the videos in `data/`, build the database by running:
+
+```bash
+python main.py preprocess \
+    --srt data/DJI_0017.SRT \
+    --video data/DJI_20260427152226_0017_D.MP4 \
+    --out-dir db/ \
+    --no-fast
+```
+
+Then run the experiment:
+
+```bash
+python main.py experiment \
+    --db db/ \
+    --query-srt data/DJI_0019.SRT \
+    --query-video data/DJI_20260427152735_0019_D.MP4 \
+    --out-dir out_v4/ \
+    --no-fast \
+    --min-inliers 8
+```
+
+---
+
 ## Usage
 
 ### 1. Build the geo-referenced database (offline, run once)
